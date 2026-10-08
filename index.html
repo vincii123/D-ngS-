@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Hiệp Sĩ Dọn Phân – RPG 3D</title>
+<style>
+:root{--ink:#fdf6e3;--gold:#f2c14e;--hp:#e4572e;--xp:#4fb286;--panel:rgba(20,28,24,.78);box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:#16241c;color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none}
+canvas{display:block;position:absolute;inset:0;width:100%;height:100%}
+#hud{position:absolute;top:calc(env(safe-area-inset-top,0px) + 10px);left:10px;right:10px;pointer-events:none}
+.bar{height:14px;border-radius:8px;background:rgba(0,0,0,.5);overflow:hidden;margin-bottom:5px;max-width:260px}
+.bar i{display:block;height:100%;transition:width .2s}
+#hp i{background:var(--hp)}#xp i{background:var(--xp);height:8px}
+#xp{height:8px}
+#lv{font-weight:700;margin-bottom:4px;text-shadow:0 1px 3px #000}
+#quest{margin-top:6px;padding:6px 10px;background:var(--panel);border-radius:8px;font-size:14px;max-width:300px}
+#msg{position:absolute;left:50%;bottom:34%;transform:translateX(-50%);width:min(88%,420px);padding:12px 16px;background:var(--panel);border:1px solid var(--gold);border-radius:12px;text-align:center;line-height:1.45;opacity:0;transition:opacity .3s;pointer-events:none}
+#msg.on{opacity:1}
+#joy{position:absolute;left:calc(env(safe-area-inset-left,0px) + 24px);bottom:calc(env(safe-area-inset-bottom,0px) + 28px);width:120px;height:120px;border-radius:50%;background:rgba(255,255,255,.12);border:2px solid rgba(255,255,255,.35)}
+#knob{position:absolute;left:35px;top:35px;width:50px;height:50px;border-radius:50%;background:rgba(242,193,78,.8)}
+#atk{position:absolute;right:26px;bottom:calc(env(safe-area-inset-bottom,0px) + 36px);width:92px;height:92px;border-radius:50%;background:rgba(228,87,46,.85);border:3px solid #fff3;color:#fff;font:700 18px system-ui;display:flex;align-items:center;justify-content:center}
+#atk:active{transform:scale(.93)}
+#over{position:absolute;inset:0;background:rgba(10,18,14,.9);display:none;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;gap:14px}
+#over h1{margin:0;color:var(--gold);font-size:34px}
+button{font:inherit;padding:12px 22px;border-radius:10px;border:0;background:var(--gold);color:#241a05;font-weight:700}
+</style>
+</head>
+<body>
+<div id="hud">
+  <div id="lv">Cấp 1</div>
+  <div class="bar" id="hp"><i style="width:100%"></i></div>
+  <div class="bar" id="xp"><i style="width:0"></i></div>
+  <div id="quest"></div>
+</div>
+<div id="msg"></div>
+<div id="joy"><div id="knob"></div></div>
+<div id="atk">Xúc!</div>
+<div id="over"><h1>Chiến thắng!</h1><p>Bạn đã hạ Phân Vua, cả làng thơm tho trở lại.</p><button onclick="location.reload()">Chơi lại</button></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+document.body.prepend(renderer.domElement);
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x9fd3e6);
+scene.fog=new THREE.Fog(0x9fd3e6,25,70);
+const camera=new THREE.PerspectiveCamera(55,1,.1,200);
+function resize(){renderer.setSize(innerWidth,innerHeight);camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix()}
+addEventListener("resize",resize);resize();
+scene.add(new THREE.HemisphereLight(0xffffff,0x4a6b3a,.9));
+const sun=new THREE.DirectionalLight(0xfff0d0,.8);sun.position.set(20,30,10);scene.add(sun);
+
+const M=(c)=>new THREE.MeshLambertMaterial({color:c});
+const ground=new THREE.Mesh(new THREE.PlaneGeometry(200,200),M(0x5e9c4a));
+ground.rotation.x=-Math.PI/2;scene.add(ground);
+const R=(a,b)=>a+Math.random()*(b-a);
+for(let i=0;i<70;i++){
+  const x=R(-45,45),z=R(-45,45);if(Math.hypot(x,z)<9)continue;
+  const t=new THREE.Group();
+  const tr=new THREE.Mesh(new THREE.CylinderGeometry(.3,.4,1.8,6),M(0x7a5230));tr.position.y=.9;
+  const lf=new THREE.Mesh(new THREE.ConeGeometry(1.6,4,7),M(0x2f7d4a));lf.position.y=3.5;
+  t.add(tr,lf);t.position.set(x,0,z);t.scale.setScalar(R(.8,1.4));scene.add(t);
+}
+
+// Người chơi
+const player=new THREE.Group();
+const body=new THREE.Mesh(new THREE.BoxGeometry(.9,1.2,.6),M(0x3a6fd8));body.position.y=1.2;
+const head=new THREE.Mesh(new THREE.SphereGeometry(.38,12,10),M(0xf2c9a0));head.position.y=2.1;
+const pivot=new THREE.Group();pivot.position.set(.6,1.3,.3);
+const blade=new THREE.Mesh(new THREE.BoxGeometry(.12,.12,1.5),M(0xdfe6ee));blade.position.z=.75;
+pivot.add(blade);player.add(body,head,pivot);scene.add(player);
+
+// NPC
+const npc=new THREE.Group();
+const nb=new THREE.Mesh(new THREE.CylinderGeometry(.5,.7,1.6,8),M(0x8e44ad));nb.position.y=.8;
+const nh=new THREE.Mesh(new THREE.SphereGeometry(.4,12,10),M(0xe8c9a0));nh.position.y=2;
+const mark=new THREE.Mesh(new THREE.OctahedronGeometry(.3),M(0xf2c14e));mark.position.y=3;
+npc.add(nb,nh,mark);npc.position.set(0,0,-7);scene.add(npc);
+
+// Kẻ địch
+const enemies=[];
+function poop(sc,boss){
+  const mat=M(boss?0x5a2d0c:0x7b4a24),g=new THREE.Group();g.material=mat;
+  [[.9,.45],[.65,1.15],[.4,1.7]].forEach(([r,y])=>{const t=new THREE.Mesh(new THREE.SphereGeometry(r,14,10),mat);t.scale.y=.6;t.position.y=y*.8;g.add(t)});
+  const tip=new THREE.Mesh(new THREE.ConeGeometry(.28,.6,8),mat);tip.position.y=1.9;g.add(tip);
+  [-.22,.22].forEach(x=>{const e=new THREE.Mesh(new THREE.SphereGeometry(.15,8,8),M(0xffffff));e.position.set(x,.98,.56);const q=new THREE.Mesh(new THREE.SphereGeometry(.07,8,8),M(0));q.position.set(x,.98,.69);g.add(e,q)});
+  g.scale.setScalar(sc);return g}
+function spawn(boss){
+  const s=boss?2.6:1,m=poop(s,boss);
+  let x,z;do{x=R(-35,35);z=R(-35,35)}while(Math.hypot(x,z)<(boss?20:12));
+  m.position.set(x,0,z);scene.add(m);
+  enemies.push({m,hp:boss?160:22,max:boss?160:22,boss,s,cd:0,hit:0});
+}
+const piles=[];
+for(let i=0;i<14;i++){const q=poop(.5,false);let x,z;do{x=R(-40,40);z=R(-40,40)}while(Math.hypot(x,z)<8);q.position.set(x,0,z);q.rotation.y=R(0,6);scene.add(q);piles.push(q)}
+for(let i=0;i<8;i++)spawn();
+
+// Trạng thái
+const P={hp:100,max:100,lv:1,xp:0,cd:0,swing:0,inv:0,atk:0};
+let stage=0,kills=0,done=false,msgT=0;
+function say(t,ms=3500){const e=$("msg");e.textContent=t;e.classList.add("on");clearTimeout(msgT);msgT=setTimeout(()=>e.classList.remove("on"),ms)}
+function ui(){
+  $("lv").textContent="Cấp "+P.lv;
+  $("hp").firstChild.style.width=Math.max(0,P.hp/P.max*100)+"%";
+  $("xp").firstChild.style.width=P.xp/(P.lv*30)*100+"%";
+  $("quest").textContent=["Nhiệm vụ: gặp Bác Nông (dấu vàng).","Bốc phân: "+kills+"/10","Quay về gặp Bác Nông.","Hạ Phân Vua (nâu đậm, to đùng)!",""][stage];
+}
+function gainXp(n){
+  P.xp+=n;
+  while(P.xp>=P.lv*30){P.xp-=P.lv*30;P.lv++;P.max+=20;P.hp=P.max;say("Lên cấp "+P.lv+"! Máu tối đa tăng.")}
+  ui();
+}
+function talk(){
+  if(stage===0){stage=1;say("Bác Nông: Làng ngập phân rồi! Cầm xẻng bốc 10 đống giúp bác, coi chừng mấy cục phân biết đi!",4500)}
+  else if(stage===2){stage=3;gainXp(40);spawn(true);say("Bác Nông: Tuyệt! Nhưng Phân Vua đã trỗi dậy. Xử nó đi!",5000)}
+  ui();
+}
+
+// Điều khiển
+const keys={};
+addEventListener("keydown",e=>{keys[e.code]=1;if(e.code==="Space"||e.code==="KeyJ")attack()});
+addEventListener("keyup",e=>keys[e.code]=0);
+const joy={x:0,y:0};let jid=null;
+const J=$("joy"),K=$("knob");
+function jmove(e){const r=J.getBoundingClientRect(),cx=r.left+60,cy=r.top+60;
+  let dx=e.clientX-cx,dy=e.clientY-cy;const d=Math.hypot(dx,dy),m=45;if(d>m){dx*=m/d;dy*=m/d}
+  K.style.left=35+dx+"px";K.style.top=35+dy+"px";joy.x=dx/m;joy.y=dy/m}
+J.addEventListener("pointerdown",e=>{jid=e.pointerId;J.setPointerCapture(jid);jmove(e)});
+J.addEventListener("pointermove",e=>{if(e.pointerId===jid)jmove(e)});
+const jend=e=>{if(e.pointerId===jid){jid=null;joy.x=joy.y=0;K.style.left=K.style.top="35px"}};
+J.addEventListener("pointerup",jend);J.addEventListener("pointercancel",jend);
+$("atk").addEventListener("pointerdown",e=>{e.preventDefault();attack()});
+
+function attack(){
+  if(P.cd>0||done)return;P.cd=.45;P.swing=.25;
+  const dmg=8+P.lv*3;
+  const fx=Math.sin(player.rotation.y),fz=Math.cos(player.rotation.y);
+  enemies.forEach(en=>{
+    const dx=en.m.position.x-player.position.x,dz=en.m.position.z-player.position.z;
+    const d=Math.hypot(dx,dz);
+    if(d<2.8+en.s*.6&&(dx*fx+dz*fz)/(d||1)>-.2){
+      en.hp-=dmg;en.hit=.2;en.m.position.x+=dx/d*.8;en.m.position.z+=dz/d*.8;
+    }
+  });
+}
+
+const clock=new THREE.Clock();
+function loop(){
+  requestAnimationFrame(loop);
+  const dt=Math.min(clock.getDelta(),.05),t=clock.elapsedTime;
+  if(!done){
+    let ix=(keys.KeyD||keys.ArrowRight?1:0)-(keys.KeyA||keys.ArrowLeft?1:0)+joy.x;
+    let iz=(keys.KeyS||keys.ArrowDown?1:0)-(keys.KeyW||keys.ArrowUp?1:0)+joy.y;
+    const l=Math.hypot(ix,iz);
+    if(l>.1){
+      const n=Math.min(l,1);ix/=l;iz/=l;
+      player.position.x=THREE.MathUtils.clamp(player.position.x+ix*6*n*dt,-48,48);
+      player.position.z=THREE.MathUtils.clamp(player.position.z+iz*6*n*dt,-48,48);
+      player.rotation.y=Math.atan2(ix,iz);
+      body.rotation.z=Math.sin(t*14)*.08;
+    }
+    P.cd-=dt;P.inv-=dt;
+    if(P.swing>0){P.swing-=dt;pivot.rotation.x=-Math.sin((1-P.swing/.25)*Math.PI)*1.6}else pivot.rotation.x=0;
+    // địch
+    for(let i=enemies.length-1;i>=0;i--){
+      const en=enemies[i],p=en.m.position;
+      const dx=player.position.x-p.x,dz=player.position.z-p.z,d=Math.hypot(dx,dz);
+      en.m.material.color.setHex(en.hit>0?0xffd9a0:(en.boss?0x5a2d0c:0x7b4a24));en.m.rotation.y=Math.atan2(dx,dz);en.hit-=dt;
+      en.m.scale.y=.75+Math.sin(t*5+i)*.08;
+      if(d<13&&d>1.3*en.s){p.x+=dx/d*(en.boss?2.6:2.3)*dt;p.z+=dz/d*(en.boss?2.6:2.3)*dt}
+      en.cd-=dt;
+      if(d<1.5*en.s&&en.cd<=0&&P.inv<=0){en.cd=1;P.inv=.5;P.hp-=en.boss?14:5;ui();
+        if(P.hp<=0){P.hp=P.max;player.position.set(0,0,0);say("Bạn ngã xuống và tỉnh lại ở làng.");ui()}}
+      if(en.hp<=0){
+        scene.remove(en.m);enemies.splice(i,1);
+        if(en.boss){done=true;$("over").style.display="flex";continue}
+        gainXp(12);
+                setTimeout(()=>{if(!done)spawn()},4000);
+      }
+    }
+    for(let i=piles.length-1;i>=0;i--){const q=piles[i];if(Math.hypot(player.position.x-q.position.x,player.position.z-q.position.z)<1.6){scene.remove(q);piles.splice(i,1);gainXp(5);if(stage===1){kills++;say("Bốc! Nặng tay quá... "+kills+"/10",1800);if(kills>=10){stage=2;say("Đủ 10 đống rồi! Về báo Bác Nông.")}}ui()}}
+    // NPC
+    mark.rotation.y+=dt*2;mark.position.y=3+Math.sin(t*3)*.15;
+    mark.visible=stage===0||stage===2;
+    if(mark.visible&&Math.hypot(player.position.x-npc.position.x,player.position.z-npc.position.z)<3.2)talk();
+  }
+  camera.position.set(player.position.x,10,player.position.z+10);
+  camera.lookAt(player.position.x,1,player.position.z);
+  renderer.render(scene,camera);
+}
+ui();say("Dùng cần trái để di chuyển (hoặc WASD). Nút Xúc! để đập phân biết đi. Hãy đến gần Bác Nông.",5000);
+loop();
+</script>
+</body>
+</html>
